@@ -13,6 +13,7 @@ import (
 
 	"github.com/firebase/genkit/go/ai"
 	"github.com/firebase/genkit/go/plugins/googleai"
+	"github.com/firebase/genkit/go/plugins/ollama"
 	"github.com/joho/godotenv"
 )
 
@@ -49,14 +50,32 @@ func generateJokes() []string {
 		log.Fatal(err)
 	}
 
+	if err := ollama.Init(ctx, "http://127.0.0.1:11434"); err != nil {
+		log.Fatal(err)
+	}
+
 	m := googleai.Model("gemini-1.5-flash")
 	if m == nil {
 		return nil
 	}
 
+	m2 := ollama.Model("gemma:2b")
+	if m2 == nil {
+		return nil
+	}
+
 	requestText := fmt.Sprintf("Your personality is: %s. Provide a list of 20 '|' (pipe) separated jokes tightly in line with the personality. Format: joke1|joke2|joke3|joke4| ...", personality)
 
-	resp, err := m.Generate(ctx,
+	// resp, err := m.Generate(ctx,
+	// 	ai.NewGenerateRequest(
+	// 		&ai.GenerationCommonConfig{Temperature: 1},
+	// 		ai.NewUserTextMessage(requestText)),
+	// 	nil)
+	// if err != nil {
+	// 	log.Fatal(err)
+	// }
+
+	resp, err := m2.Generate(ctx,
 		ai.NewGenerateRequest(
 			&ai.GenerationCommonConfig{Temperature: 1},
 			ai.NewUserTextMessage(requestText)),
