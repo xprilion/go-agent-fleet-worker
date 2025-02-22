@@ -2,9 +2,9 @@ package main
 
 import (
 	"bytes"
-	"context"
 	"encoding/json"
 	"fmt"
+	"io/ioutil"
 	"log"
 	"math/rand"
 	"net/http"
@@ -13,8 +13,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/firebase/genkit/go/ai"
-	"github.com/firebase/genkit/go/plugins/googleai"
 	"github.com/joho/godotenv"
 )
 
@@ -35,7 +33,7 @@ func init() {
 
 	personality = os.Getenv("PERSONALITY")
 	if personality == "" {
-		personality = "unset"
+		personality = "You are a funny and engaging comedian. You are also a bit of a nerd and like to talk about technology and science."
 	}
 
 	postEndpoint = os.Getenv("POST_ENDPOINT")
@@ -45,31 +43,86 @@ func init() {
 }
 
 func generateJokes() []string {
-	ctx := context.Background()
-
-	if err := googleai.Init(ctx, nil); err != nil {
-		log.Fatal(err)
+	apiKey := os.Getenv("GEMINI_API_KEY")
+	if apiKey == "" {
+		log.Fatal("GEMINI_API_KEY environment variable not set")
 	}
 
-	m := googleai.Model("gemini-1.5-flash")
-	if m == nil {
+	url := fmt.Sprintf("https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=%s", apiKey)
+
+	requestBody := map[string]interface{}{
+		"contents": []map[string]interface{}{
+			{
+				"parts": []map[string]interface{}{
+					{
+						"text": fmt.Sprintf("Your personality is: %s. Provide a list of 20 '|' (pipe) separated jokes tightly in line with the personality, only safe for work jokes. Format: joke1|joke2|joke3|joke4| ...", personality),
+					},
+				},
+			},
+		},
+	}
+
+	jsonBody, err := json.Marshal(requestBody)
+	if err != nil {
+		log.Fatal("Failed to marshal request body:", err)
 		return nil
 	}
 
-	requestText := fmt.Sprintf("Your personality is: %s. Provide a list of 20 '|' (pipe) separated jokes tightly in line with the personality. Format: joke1|joke2|joke3|joke4| ...", personality)
-
-	resp, err := m.Generate(ctx,
-		ai.NewGenerateRequest(
-			&ai.GenerationCommonConfig{Temperature: 1},
-			ai.NewUserTextMessage(requestText)),
-		nil)
+	req, err := http.NewRequest("POST", url, bytes.NewBuffer(jsonBody))
 	if err != nil {
-		log.Fatal(err)
+		log.Fatal("Failed to create request:", err)
+		return nil
 	}
 
-	text, err := resp.Text()
+	req.Header.Set("Content-Type", "application/json")
+
+	client := &http.Client{}
+	resp, err := client.Do(req)
 	if err != nil {
-		log.Fatal(err)
+		log.Fatal("Failed to make request:", err)
+		return nil
+	}
+	defer resp.Body.Close()
+
+	body, err := ioutil.ReadAll(resp.Body)
+	if err != nil {
+		log.Fatal("Failed to read response body:", err)
+		return nil
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		log.Printf("Request failed with status code %d. Response: %s", resp.StatusCode, string(body))
+		return nil
+	}
+
+	var response map[string]interface{}
+	if err := json.Unmarshal(body, &response); err != nil {
+		log.Fatal("Failed to unmarshal response:", err)
+		return nil
+	}
+
+	candidates, ok := response["candidates"].([]interface{})
+	if !ok || len(candidates) == 0 {
+		log.Fatal("No candidates in response")
+		return nil
+	}
+
+	content, ok := candidates[0].(map[string]interface{})["content"].(map[string]interface{})
+	if !ok {
+		log.Fatal("Invalid content structure")
+		return nil
+	}
+
+	parts, ok := content["parts"].([]interface{})
+	if !ok || len(parts) == 0 {
+		log.Fatal("Invalid parts structure")
+		return nil
+	}
+
+	text, ok := parts[0].(map[string]interface{})["text"].(string)
+	if !ok {
+		log.Fatal("Invalid text structure")
+		return nil
 	}
 
 	return splitJokes(text)
@@ -91,7 +144,7 @@ func postJokePeriodically() {
 
 			currentTime := time.Now().UnixMilli()
 			payload := map[string]interface{}{
-				"collectionName": "pings-gccd-indore",
+				"collectionName": "pings-aicd-delhi",
 				"data": map[string]interface{}{
 					"name":      title,
 					"message":   escapedJoke,
@@ -148,6 +201,7 @@ func getJoke(w http.ResponseWriter, r *http.Request) {
 
 func main() {
 	jokes = generateJokes()
+	fmt.Println("Jokes generated:", jokes)
 
 	go postJokePeriodically()
 

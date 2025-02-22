@@ -1,5 +1,5 @@
 # Use the official Golang image as the base image
-FROM golang:1.22-alpine
+FROM golang:1.23-alpine
 
 # Set the working directory inside the container
 WORKDIR /app
@@ -24,7 +24,7 @@ WORKDIR /root/
 
 # Copy the binary and .env file from the builder image
 COPY --from=0 /app/main .
-COPY --from=0 /app/.env .
+# COPY --from=0 /app/.env .
 
 # Expose the port the app runs on
 EXPOSE 5000
